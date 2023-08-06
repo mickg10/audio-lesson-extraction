@@ -18,3 +18,9 @@ conda install pytorch==2.0.0 torchaudio==2.0.0 pytorch-cuda=11.8 -c pytorch -c n
 ```
 pip install -r requirements.txt
 ```
+
+
+4. Run like
+```
+python decode_whisper.py  --outdir /mnt/c/s/mickg/audio_lessons `cat youtube_links.txt`
+```
