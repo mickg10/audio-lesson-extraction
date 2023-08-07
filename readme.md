@@ -8,7 +8,7 @@ conda create --name whisperx2 python=3.10
 conda activate whisperx2
 ```
 
-2. Install PyTorch2.0, e.g. for Linux and Windows CUDA11.7:
+2. Install PyTorch2.0, e.g. for Linux and Windows CUDA11.8:
 ```
 conda install pytorch==2.0.0 torchaudio==2.0.0 pytorch-cuda=11.8 -c pytorch -c nvidia ffmpeg
 ```
