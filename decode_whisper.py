@@ -27,6 +27,7 @@ import whisperx
 import gc 
 import urllib
 import multiprocessing
+from typing import List
 
 def download_init(url):
     logging.info(f"Initializing youtube : {url}")
@@ -36,16 +37,16 @@ def download_init(url):
     hash_file.update(yt.title.encode())
     return yt, f'{hash_file.hexdigest()}.mp4'
 
-def download_video(yt,file_name):
+def download_video(yt: pytube.YouTube, file_name: str) -> None:
     logging.info(f"Downloading from youtube :  {yt.watch_url}")
     yt.streams.first().download("", file_name,skip_existing=True)
     logging.info(f"Downloaded to {file_name}")
 
-def save_to_excel(data, file_name):
+def save_to_excel(data: List[dict], file_name: str) -> None:
     df = pd.DataFrame(data, columns=["starttime", 'endtime', 'speaker', 'text'])
     df.to_excel(file_name, index=False)
 
-def run_one(inputname,temp_files, args):
+def run_one(inputname: str, temp_files: List[str], args: argparse.Namespace) -> None:
     if inputname.startswith("http"):
         yt, audiofile = download_init(inputname)
         title = yt.title
@@ -70,7 +71,7 @@ def run_one(inputname,temp_files, args):
     model = whisperx.load_model("large-v2", device, compute_type=compute_type)
 
     align_models={}
-    def load_align_model(language):
+    def load_align_model(language: str):
         if language not in align_models:
             logging.info(f"Loading model for language {language}") # before alignment
             try:
@@ -90,10 +91,9 @@ def run_one(inputname,temp_files, args):
 
 
     logging.info("Transcribing") # before alignment
-    result = model.transcribe(audio, batch_size=batch_size)
+    result = model.transcribe(audio, batch_size=batch_size, language = None if args.language == 'AUTO' else args.language)
     logging.debug(result["segments"]) # before alignment
-    logging.info(f"Detected language: {result['language']}")
-
+    logging.info(f"Detected language: {result['language']} ")
     logging.info("Aligning") # before alignment
     model_a, metadata = load_align_model(result['language'])
     if model_a is None:
@@ -140,8 +140,7 @@ def run_one(inputname,temp_files, args):
     if res_table:
         save_to_excel(res_table, f"{output_prefix}.xlsx")
 
-def mp_run(fname, args):
-    temp_files=[]
+def mp_run(fname: str, args: argparse.Namespace, temp_files: List[str] = []) -> None:
     try:
         run_one(fname, temp_files, args)
     except Exception as e:
@@ -156,6 +155,7 @@ def main() -> int:
     parser.add_argument("--log_level", default=logging.INFO, type=lambda x: getattr(logging, x), help=f"Configure the logging level: {list(logging._nameToLevel.keys())}")
     parser.add_argument('--input', help=f"what file to use")
     parser.add_argument('--outdir', default='.', help=f"where to write the output files")
+    parser.add_argument('--language', default='AUTO', help="What language to use")
     parser.add_argument('files', nargs=argparse.ONE_OR_MORE, help="files to process")
     args = parser.parse_args()
     logging.basicConfig(level=args.log_level, format='%(asctime)s:%(lineno)d %(message)s')
