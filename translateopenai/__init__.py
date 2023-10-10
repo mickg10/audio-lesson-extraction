@@ -60,7 +60,11 @@ def translate_dataframe(keyfile, df: pd.DataFrame, speaker_col: str, text_col: s
                     logging.error(f"Failed to translate {i} : {e} - retrying")
             lines = output.split("\n")
             for l in lines:
-                idx, _ , text = l.split("|")
+                splt = l.split("|")
+                if len(splt)!=3:
+                    logging.error(f"Failed to translate {i} : got {l} - skipping")
+                    continue
+                idx, _ , text = splt
                 df[output_col][int(idx)] = text.strip()
             logging.log(logging.INFO, f"Translated {i} to {i+step} in {tries} tries: \n {df.iloc[i:i+step]}")
             if apply_at_step is not None:
