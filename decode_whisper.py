@@ -42,10 +42,6 @@ def download_video(yt: pytube.YouTube, file_name: str) -> None:
     yt.streams.first().download("", file_name,skip_existing=True)
     logging.info(f"Downloaded to {file_name}")
 
-def save_to_excel(data: List[dict], file_name: str) -> None:
-    df = pd.DataFrame(data, columns=["starttime", 'endtime', 'speaker', 'text'])
-    df.to_excel(file_name, index=False)
-
 def run_one(inputname: str, temp_files: List[str], args: argparse.Namespace) -> None:
     if inputname.startswith("http"):
         yt, audiofile = download_init(inputname)
@@ -105,6 +101,7 @@ def run_one(inputname: str, temp_files: List[str], args: argparse.Namespace) -> 
     diarize_model = whisperx.DiarizationPipeline(use_auth_token="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", device=device)
     diarize_segments = diarize_model(audio)
 
+    logging.info(f"Assigning speakers")
     result = whisperx.assign_word_speakers(diarize_segments, result)
     logging.debug(diarize_segments)
     logging.debug(result["segments"]) # segments are now assigned speaker IDs
@@ -137,8 +134,10 @@ def run_one(inputname: str, temp_files: List[str], args: argparse.Namespace) -> 
         #    speakerfile[speaker].write(f"{text[1:] if text[0] == ' ' else text}\n")
         generic_file.write(f"{startTime} --> {endTime}\t{speaker}\t{text[1:] if text[0] == ' ' else text}\n")
         res_table.append([startTime, endTime, speaker, text])
+
     if res_table:
-        save_to_excel(res_table, f"{output_prefix}.xlsx")
+        df = pd.DataFrame(res_table, columns=["starttime", 'endtime', 'speaker', 'text'])
+        df.to_excel(f"{output_prefix}.xlsx", index=False)
 
 def mp_run(fname: str, args: argparse.Namespace, temp_files: List[str] = []) -> None:
     try:
