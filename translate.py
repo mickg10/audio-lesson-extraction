@@ -11,6 +11,9 @@ def main() -> int:
     parser.add_argument('--input', help=f"what file to use")
     parser.add_argument('--output', help=f"where to write the output files")
     parser.add_argument('--language', default='english', help="What language to use")
+    parser.add_argument('--context', type=int,default=40,help="How many lines to process")
+    parser.add_argument('--model', default="gpt-3.5-turbo",help="What openai model to use - [gpt-3.5-turbo, gpt-4]")
+    parser.add_argument('--api_key_file', default="../openai.key",help="OPENAI_API_KEY file")
     args = parser.parse_args()
     logging.basicConfig(level=args.log_level, format='%(asctime)s:%(lineno)d %(message)s')
     
@@ -20,7 +23,7 @@ def main() -> int:
             x.to_excel(args.output, index=False)
         elif (args.output.endswith(".txt")): 
             x.to_csv(args.output, index=False, sep="\t")
-    translateopenai.translate_dataframe("../openai.key", df, speaker_col="speaker", text_col="text", output_col="translated", language=args.language, context_lines=2, model="gpt-3.5-turbo", apply_at_step=write_df)
+    translateopenai.translate_dataframe(args.api_key_file, df, speaker_col="speaker", text_col="text", output_col="translated", language=args.language, context_lines=args.context, model=args.model, apply_at_step=write_df)
     write_df(df)
     return 0
 

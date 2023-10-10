@@ -28,6 +28,7 @@ import gc
 import urllib
 import multiprocessing
 from typing import List
+import translateopenai
 
 def download_init(url):
     logging.info(f"Initializing youtube : {url}")
@@ -137,6 +138,8 @@ def run_one(inputname: str, temp_files: List[str], args: argparse.Namespace) -> 
 
     if res_table:
         df = pd.DataFrame(res_table, columns=["starttime", 'endtime', 'speaker', 'text'])
+        if args.translate_to_language:
+            translateopenai.translate_dataframe(args.translate_api_key_file , df, speaker_col="speaker", text_col="text", output_col="translated", language=args.translate_to_language, context_lines=args.translate_context, model=args.translate_model)        
         df.to_excel(f"{output_prefix}.xlsx", index=False)
 
 def mp_run(fname: str, args: argparse.Namespace, temp_files: List[str] = []) -> None:
@@ -155,6 +158,10 @@ def main() -> int:
     parser.add_argument('--input', help=f"what file to use")
     parser.add_argument('--outdir', default='.', help=f"where to write the output files")
     parser.add_argument('--language', default='AUTO', help="What language to use")
+    parser.add_argument('--translate_to_language', help="If set, translate to this language by adding a column to the output file")
+    parser.add_argument('--translate_context', type=int,default=40,help="How many lines to process")
+    parser.add_argument('--translate_model', default="gpt-3.5-turbo",help="What openai model to use - [gpt-3.5-turbo, gpt-4]")
+    parser.add_argument('--translate_api_key_file', default="../openai.key",help="OPENAI_API_KEY file")
     parser.add_argument('files', nargs=argparse.ONE_OR_MORE, help="files to process")
     args = parser.parse_args()
     logging.basicConfig(level=args.log_level, format='%(asctime)s:%(lineno)d %(message)s')
