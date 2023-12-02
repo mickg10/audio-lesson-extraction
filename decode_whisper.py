@@ -52,7 +52,7 @@ def run_one(inputname: str, temp_files: List[str], args: argparse.Namespace) -> 
         audiofile = inputname
         output_prefix = audiofile
     
-    if os.path.exists(output_prefix+".xlsx"):
+    if os.path.exists(output_prefix+".xlsx") and not args.force:
         logging.info(f"Skipping {audiofile} as {output_prefix}.xlsx exists")
         return
     
@@ -60,19 +60,23 @@ def run_one(inputname: str, temp_files: List[str], args: argparse.Namespace) -> 
         download_video(yt, audiofile)
         temp_files.append(audiofile)
 
-    device = "cuda" 
+    transcribe_device = "cpu" if args.device == "mps" else args.device 
+    align_device = args.device
+    diarize_device = args.device
     batch_size = 16 # reduce if low on GPU mem
-    compute_type = "float16" # change to "int8" if low on GPU mem (may reduce accuracy)
+    transcribe_compute_type = "float32" if transcribe_device=="cpu" else "float16" # change to "int8" if low on GPU mem (may reduce accuracy)
+    diarize_compute_type = "float32" if diarize_device=="cpu" else "float16" # change to "int8" if low on GPU mem (may reduce accuracy)
+    align_compute_type = "float32" if align_device=="cpu" else "float16" # change to "int8" if low on GPU mem (may reduce accuracy)
 
     logging.info("Loading model")
-    model = whisperx.load_model("large-v2", device, compute_type=compute_type)
+    model = whisperx.load_model("large-v3", transcribe_device, compute_type=transcribe_compute_type)
 
     align_models={}
     def load_align_model(language: str):
         if language not in align_models:
             logging.info(f"Loading model for language {language}") # before alignment
             try:
-                model_a, metadata = whisperx.load_align_model(language_code=language, device=device)
+                model_a, metadata = whisperx.load_align_model(language_code=language, device=align_device)
             except:
                 return None, None
             align_models[language] = (model_a, metadata)
@@ -96,10 +100,10 @@ def run_one(inputname: str, temp_files: List[str], args: argparse.Namespace) -> 
     if model_a is None:
         logging.warning(f"Tried loading a non-existant language : {result['language']}") # before alignment
         return
-    result = whisperx.align(result["segments"], model_a, metadata, audio, device, return_char_alignments=False)
+    result = whisperx.align(result["segments"], model_a, metadata, audio, align_device, return_char_alignments=False)
     logging.debug(result["segments"]) # after alignment
     logging.info("Diarizing") # before alignment
-    diarize_model = whisperx.DiarizationPipeline(use_auth_token="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", device=device)
+    diarize_model = whisperx.DiarizationPipeline(use_auth_token="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", device=diarize_device)
     diarize_segments = diarize_model(audio)
 
     logging.info(f"Assigning speakers")
@@ -142,22 +146,29 @@ def run_one(inputname: str, temp_files: List[str], args: argparse.Namespace) -> 
             translateopenai.translate_dataframe(args.translate_api_key_file , df, speaker_col="speaker", text_col="text", output_col="translated", language=args.translate_to_language, context_lines=args.translate_context, model=args.translate_model)        
         df.to_excel(f"{output_prefix}.xlsx", index=False)
 
-def mp_run(fname: str, args: argparse.Namespace, temp_files: List[str] = []) -> None:
-    try:
+def mp_run(parallel: bool, fname: str, args: argparse.Namespace, temp_files: List[str] = []) -> None:
+    if parallel:
+        try:
+            run_one(fname, temp_files, args)
+        except Exception as e:
+            logging.error(f"Failed to download {fname} : {e}")
+        finally:
+            for f in temp_files:
+                os.remove(f)
+    else:
         run_one(fname, temp_files, args)
-    except Exception as e:
-        logging.error(f"Failed to download {fname} : {e}")
-    finally:
-        for f in temp_files:
-            os.remove(f)
+ 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--log_level", default=logging.INFO, type=lambda x: getattr(logging, x), help=f"Configure the logging level: {list(logging._nameToLevel.keys())}")
+    parser.add_argument('--force', help="force overwrite", action="store_true")
     parser.add_argument('--input', help=f"what file to use")
+    parser.add_argument('--device', choices=["cpu", "cuda", "mps"], default="cpu", help=f"what device to use")
     parser.add_argument('--outdir', default='.', help=f"where to write the output files")
     parser.add_argument('--language', default='AUTO', help="What language to use")
+    parser.add_argument('--parallel', type=int, default=4, help="How many threads to run in parallel")
     parser.add_argument('--translate_to_language', help="If set, translate to this language by adding a column to the output file")
     parser.add_argument('--translate_context', type=int,default=40,help="How many lines to process")
     parser.add_argument('--translate_model', default="gpt-3.5-turbo",help="What openai model to use - [gpt-3.5-turbo, gpt-4]")
@@ -165,11 +176,15 @@ def main() -> int:
     parser.add_argument('files', nargs=argparse.ONE_OR_MORE, help="files to process")
     args = parser.parse_args()
     logging.basicConfig(level=args.log_level, format='%(asctime)s:%(lineno)d %(message)s')
-
+    logger=logging.getLogger(__name__)
+    logger.info(f"Args: {args}")
     for f in args.files:
-        with multiprocessing.Pool(processes=1) as pool:
-            # Launch the worker function asynchronously and pass the input value
-            result = pool.apply(mp_run, args=(f, args))        
+        if args.parallel>1:
+            with multiprocessing.Pool(processes=args.parallel) as pool:
+                # Launch the worker function asynchronously and pass the input value
+                result = pool.apply(mp_run, args=(True, f, args))        
+        else:
+            mp_run(False, f,args)
     
     return 0
 
