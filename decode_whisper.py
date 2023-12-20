@@ -38,10 +38,15 @@ def download_init(url):
     hash_file.update(yt.title.encode())
     return yt, f'{hash_file.hexdigest()}.mp4'
 
-def download_video(yt: pytube.YouTube, file_name: str) -> None:
+def download_video(yt: pytube.YouTube, file_name: str) -> bool:
     logging.info(f"Downloading from youtube :  {yt.watch_url}")
-    yt.streams.first().download("", file_name,skip_existing=True)
+    try:
+        yt.streams.first().download("", file_name,skip_existing=True)
+    except Exception as e:
+        logging.error(f"Failed to download {yt.watch_url} : {e}")
+        return False
     logging.info(f"Downloaded to {file_name}")
+    return True
 
 def run_one(inputname: str, temp_files: List[str], args: argparse.Namespace) -> None:
     if inputname.startswith("http"):
@@ -57,7 +62,8 @@ def run_one(inputname: str, temp_files: List[str], args: argparse.Namespace) -> 
         return
     
     if inputname.startswith("http"):
-        download_video(yt, audiofile)
+        if not download_video(yt, audiofile):
+            return
         temp_files.append(audiofile)
 
     transcribe_device = "cpu" if args.device == "mps" else args.device 
@@ -172,7 +178,7 @@ def main() -> int:
     parser.add_argument('--translate_to_language', help="If set, translate to this language by adding a column to the output file")
     parser.add_argument('--translate_context', type=int,default=40,help="How many lines to process")
     parser.add_argument('--translate_model', default="gpt-3.5-turbo",help="What openai model to use - [gpt-3.5-turbo, gpt-4]")
-    parser.add_argument('--translate_api_key_file', default="../openai.key",help="OPENAI_API_KEY file")
+    parser.add_argument('--translate_api_key_file', default="../aikeys/openai.key",help="OPENAI_API_KEY file")
     parser.add_argument('files', nargs=argparse.ONE_OR_MORE, help="files to process")
     args = parser.parse_args()
     logging.basicConfig(level=args.log_level, format='%(asctime)s:%(lineno)d %(message)s')

@@ -1,0 +1,27 @@
+certifi==2022.12.7
+charset-normalizer==3.0.1
+ffmpeg-python==0.2.0
+filelock==3.9.0
+future==0.18.3
+huggingface-hub==0.12.1
+idna==3.4
+more-itertools==9.0.0
+mpmath==1.2.1
+networkx==3.0rc1
+numpy==1.24.2
+openai-whisper @ git+https://github.com/openai/whisper.git@51c785f7c91b8c032a1fa79c0e8f862dea81b860
+packaging==23.0
+Pillow==9.4.0
+PyYAML==6.0
+regex==2022.10.31
+requests==2.28.2
+SpeechRecognition==3.9.0
+sympy==1.11.1
+tokenizers==0.13.2
+torch
+torchaudio
+torchvision
+tqdm==4.64.1
+transformers==4.26.1
+typing_extensions==4.4.0
+urllib3==1.26.14
