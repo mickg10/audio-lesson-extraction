@@ -1,5 +1,7 @@
 import pandas as pd
 import openai
+from openai import OpenAI
+
 from typing import List
 import logging
 import time
@@ -22,15 +24,13 @@ def save_to_excel(data: List[dict], file_name: str) -> None:
     df = pd.DataFrame(data, columns=["starttime", 'endtime', 'speaker', 'text'])
     df.to_excel(file_name, index=False)
 
-def translate_to(language, sentence, model):
+def translate_to(language, sentence, model, client):
     # Ensure you have set up your OpenAI API key before calling this
-    response = openai.ChatCompletion.create(
-        model =  model,
-        temperature = 0,
-        messages = [
-            {"role": "user", "content": f"Translate the following text while maintaining format and do not merge lines to {language}: '{sentence}'"}
-        ]
-    )
+    response = client.chat.completions.create(model =  model,
+    temperature = 0,
+    messages = [
+        {"role": "user", "content": f"Translate the following text while maintaining format and do not merge lines to {language}: '{sentence}'"}
+    ])
     return response.choices[0]["message"]["content"]
 
 def read_openai_key(file_path: str) -> str:
@@ -38,8 +38,8 @@ def read_openai_key(file_path: str) -> str:
         return file.readline().strip()
 
 def translate_dataframe(keyfile, df: pd.DataFrame, speaker_col: str, text_col: str, output_col:str, language: str, context_lines=40, model="gpt-3.5-turbo", apply_at_step=None):
-    openai.api_key = read_openai_key(keyfile)
     logging.log(logging.DEBUG, f"Translating {df.shape[0]} lines")
+    client = OpenAI(api_key=read_openai_key(keyfile))
     step=context_lines
     out=[]
     df[output_col] = ["" for i in range(df.shape[0])]
@@ -52,9 +52,9 @@ def translate_dataframe(keyfile, df: pd.DataFrame, speaker_col: str, text_col: s
             while True:
                 tries += 1
                 try:
-                    output = translate_to(language, f"\n{line}", model)
+                    output = translate_to(language, f"\n{line}", model, client)
                     break
-                except openai.error.APIError as e:
+                except openai.APIError as e:
                     logging.error(f"Failed to translate {i} : {e} - retrying")
                 except openai.error.ServiceUnavailableError as e:
                     logging.error(f"Failed to translate {i} : {e} - retrying")

@@ -4,11 +4,12 @@ import argparse
 import logging
 import pandas as pd
 import sys
-import openai
+from openai import OpenAI
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     try:
-        openai.api_key = translateopenai.read_openai_key("../openai.key")
+        client = OpenAI(api_key=translateopenai.read_openai_key("../openai.key"))
     except:
         pass
     parser.add_argument("--log_level", default=logging.INFO, type=lambda x: getattr(logging, x), help=f"Configure the logging level: {list(logging._nameToLevel.keys())}")
@@ -16,8 +17,8 @@ def main() -> int:
     parser.add_argument('--output', help=f"where to write the output files")
     parser.add_argument('--language', default='english', help="What language to use")
     parser.add_argument('--context', type=int,default=40,help="How many lines to process")
-    parser.add_argument('--model', default="gpt-3.5-turbo",help=f"What openai model to use - {[m for m in [x['id'] for x in openai.Model.list()['data']] if 'gpt' in m]}")
-    parser.add_argument('--api_key_file', default="../openai.key",help="OPENAI_API_KEY file")
+    parser.add_argument('--model', default="gpt-3.5-turbo",help=f"What openai model to use - {[m for m in [x['id'] for x in client.models.list()['data']] if 'gpt' in m]}")
+    parser.add_argument('--api_key_file', default="../aikeys/openai.key",help="OPENAI_API_KEY file")
     args = parser.parse_args()
     logging.basicConfig(level=args.log_level, format='%(asctime)s:%(lineno)d %(message)s')
     
