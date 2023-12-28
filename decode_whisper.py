@@ -109,7 +109,8 @@ def run_one(inputname: str, temp_files: List[str], args: argparse.Namespace) -> 
     result = whisperx.align(result["segments"], model_a, metadata, audio, align_device, return_char_alignments=False)
     logging.debug(result["segments"]) # after alignment
     logging.info("Diarizing") # before alignment
-    diarize_model = whisperx.DiarizationPipeline(use_auth_token="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", device=diarize_device)
+    diarize_model = whisperx.DiarizationPipeline(use_auth_token="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", device=diarize_device)
+    #diarize_model = whisperx.DiarizationPipeline(use_auth_token="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", device=diarize_device)
     diarize_segments = diarize_model(audio)
 
     logging.info(f"Assigning speakers")
@@ -154,6 +155,7 @@ def run_one(inputname: str, temp_files: List[str], args: argparse.Namespace) -> 
 
 def mp_run(parallel: bool, fname: str, args: argparse.Namespace, temp_files: List[str] = []) -> None:
     if parallel:
+        logging.warning(f"Launching {fname} in bg!")
         try:
             run_one(fname, temp_files, args)
         except Exception as e:
@@ -184,12 +186,15 @@ def main() -> int:
     logging.basicConfig(level=args.log_level, format='%(asctime)s:%(lineno)d %(message)s')
     logger=logging.getLogger(__name__)
     logger.info(f"Args: {args}")
-    for f in args.files:
-        if args.parallel>1:
-            with multiprocessing.Pool(processes=args.parallel) as pool:
+    if args.parallel>1:
+        with multiprocessing.Pool(processes=args.parallel) as pool:
+            for f in args.files:
                 # Launch the worker function asynchronously and pass the input value
-                result = pool.apply(mp_run, args=(True, f, args))        
-        else:
+                result = pool.apply_async(mp_run, args=(True, f, args))
+            pool.close()
+            pool.join()
+    else:
+        for f in args.files:
             mp_run(False, f,args)
     
     return 0
