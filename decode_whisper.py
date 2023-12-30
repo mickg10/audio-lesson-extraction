@@ -153,18 +153,22 @@ def run_one(inputname: str, temp_files: List[str], args: argparse.Namespace) -> 
             translateopenai.translate_dataframe(args.translate_api_key_file , df, speaker_col="speaker", text_col="text", output_col="translated", language=args.translate_to_language, context_lines=args.translate_context, model=args.translate_model)        
         df.to_excel(f"{output_prefix}.xlsx", index=False)
 
-def mp_run(parallel: bool, fname: str, args: argparse.Namespace, temp_files: List[str] = []) -> None:
+def mp_run(parallel: bool, fname: str, args: argparse.Namespace, temp_files: List[str] = []):
     if parallel:
         logging.warning(f"Launching {fname} in bg!")
         try:
             run_one(fname, temp_files, args)
+            res = True
         except Exception as e:
             logging.error(f"Failed to download {fname} : {e}")
+            res = False
         finally:
             for f in temp_files:
                 os.remove(f)
+        return (fname, res)
     else:
         run_one(fname, temp_files, args)
+        return (fname, True)
  
 
 def main() -> int:
@@ -188,9 +192,9 @@ def main() -> int:
     logger.info(f"Args: {args}")
     if args.parallel>1:
         with multiprocessing.Pool(processes=args.parallel) as pool:
-            for f in args.files:
-                # Launch the worker function asynchronously and pass the input value
-                result = pool.apply_async(mp_run, args=(True, f, args))
+            multires = [pool.apply_async(mp_run, args=(True, f, args)) for f in args.files]
+            for res in multires:
+                logger.info(f"Produced result: {res.get()}")
             pool.close()
             pool.join()
     else:
