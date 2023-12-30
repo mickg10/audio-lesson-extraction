@@ -56,8 +56,6 @@ def translate_dataframe(keyfile, df: pd.DataFrame, speaker_col: str, text_col: s
                     break
                 except openai.APIError as e:
                     logging.error(f"Failed to translate {i} : {e} - retrying")
-                except openai.error.ServiceUnavailableError as e:
-                    logging.error(f"Failed to translate {i} : {e} - retrying")
             lines = output.split("\n")
             for l in lines:
                 splt = l.split("|")
