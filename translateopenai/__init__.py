@@ -11,6 +11,7 @@ import logging
 @contextmanager
 def timer(label="Block of code"):
     start_time = time.time()
+    logging.log(logging.INFO, f"{label} starting to execute - measuring timing")
     try:
         yield
     finally:
@@ -31,7 +32,8 @@ def translate_to(language, sentence, model, client):
     messages = [
         {"role": "user", "content": f"Translate the following text while maintaining format and do not merge lines to {language}: '{sentence}'"}
     ])
-    return response.choices[0]["message"]["content"]
+    #print("AAAA",response.choices)
+    return response.choices[0].message.content
 
 def read_openai_key(file_path: str) -> str:
     with open(file_path, 'r') as file:
@@ -44,7 +46,7 @@ def translate_dataframe(keyfile, df: pd.DataFrame, speaker_col: str, text_col: s
     out=[]
     df[output_col] = ["" for i in range(df.shape[0])]
     for i in range(0, df.shape[0],step):
-        with timer(f"Translating lines {i} to {i+step}"):
+        with timer(f"Translating lines {i} to {i+step} into language {language}"):
             slice = df.iloc[i:i+step][[speaker_col,text_col]]
             slice["merged"] = slice.index.astype(str) + "|" + slice[speaker_col] + "|" + slice[text_col]
             line = "\n".join(list(slice["merged"]))
@@ -63,7 +65,7 @@ def translate_dataframe(keyfile, df: pd.DataFrame, speaker_col: str, text_col: s
                     logging.error(f"Failed to translate {i} : got {l} - skipping")
                     continue
                 idx, _ , text = splt
-                df[output_col][int(idx)] = text.strip()
+                df.loc[int(idx),output_col] = text.strip()
             logging.log(logging.INFO, f"Translated {i} to {i+step} in {tries} tries: \n {df.iloc[i:i+step]}")
             if apply_at_step is not None:
                 apply_at_step(df)
