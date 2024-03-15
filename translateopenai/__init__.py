@@ -30,7 +30,7 @@ def translate_to(language, sentence, model, client):
     response = client.chat.completions.create(model =  model,
     temperature = 0,
     messages = [
-        {"role": "user", "content": f"Translate the following text while maintaining format and do not merge lines to {language}: '{sentence}'"}
+        {"role": "user", "content": f"Translate the following text while maintaining format, prefixing with numbers, and do not merge lines to {language}: '{sentence}'"}
     ])
     #print("AAAA",response.choices)
     return response.choices[0].message.content
@@ -60,12 +60,14 @@ def translate_dataframe(keyfile, df: pd.DataFrame, speaker_col: str, text_col: s
                     logging.error(f"Failed to translate {i} : {e} - retrying")
             lines = output.split("\n")
             for l in lines:
+                #logging.log(logging.INFO, f"FOO{l}")
+                print("AAAAAAAAA",l)
                 splt = l.split("|")
                 if len(splt)!=3:
                     logging.error(f"Failed to translate {i} : got {l} - skipping")
                     continue
                 idx, _ , text = splt
-                df.loc[int(idx),output_col] = text.strip()
+                df.loc[int(idx.replace("'","")),output_col] = text.strip()
             logging.log(logging.INFO, f"Translated {i} to {i+step} in {tries} tries: \n {df.iloc[i:i+step]}")
             if apply_at_step is not None:
                 apply_at_step(df)
