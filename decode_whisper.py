@@ -21,7 +21,7 @@ import sqlite3
 #import whisper
 import torchaudio
 from datetime import timedelta
-import pytube
+import pytubefix
 import hashlib
 import whisperx
 import gc 
@@ -32,16 +32,53 @@ import translateopenai
 
 def download_init(url):
     logging.info(f"Initializing youtube : {url}")
-    yt = pytube.YouTube(url=url)
+    try:
+        yt = pytubefix.YouTube(url=url)
+    except Exception as e:
+        logging.error(f"Cannot initialize YouTube: {e}")
+        raise
 
     hash_file = hashlib.md5()
-    hash_file.update(yt.title.encode())
+    try:
+        hash_file.update(yt.title.encode())
+    except Exception as e:
+        logging.error(f"Cannot read YouTube title: {e}")
+        raise
     return yt, f'{hash_file.hexdigest()}.mp4'
 
-def download_video(yt: pytube.YouTube, file_name: str) -> bool:
+def download_video(yt: pytubefix.YouTube, file_name: str) -> bool:
     logging.info(f"Downloading from youtube :  {yt.watch_url}")
     try:
-        yt.streams.first().download("", file_name,skip_existing=True)
+        # Try different methods to get a stream
+        stream = None
+        try:
+            # Try to get audio-only stream first (more reliable)
+            stream = yt.streams.filter(only_audio=True).first()
+            logging.info("Using audio-only stream")
+        except Exception as e:
+            logging.warning(f"Could not get audio stream: {e}")
+            
+        if not stream:
+            try:
+                # Try to get any available stream
+                stream = yt.streams.first()
+                logging.info("Using first available stream")
+            except Exception as e:
+                logging.warning(f"Could not get first stream: {e}")
+                
+        if not stream:
+            try:
+                # Try to get highest resolution
+                stream = yt.streams.get_highest_resolution()
+                logging.info("Using highest resolution stream")
+            except Exception as e:
+                logging.warning(f"Could not get highest resolution: {e}")
+        
+        if not stream:
+            raise Exception("No suitable streams found")
+            
+        # Download the stream
+        stream.download("", file_name, skip_existing=True)
     except Exception as e:
         logging.error(f"Failed to download {yt.watch_url} : {e}")
         return False
@@ -74,16 +111,16 @@ def run_one(inputname: str, temp_files: List[str], args: argparse.Namespace) -> 
     diarize_compute_type = "float32" if diarize_device=="cpu" else "float16" # change to "int8" if low on GPU mem (may reduce accuracy)
     align_compute_type = "float32" if align_device=="cpu" else "float16" # change to "int8" if low on GPU mem (may reduce accuracy)
 
-    logging.info("Loading model")
+    logging.info(f"Loading model onto device {transcribe_device}")
     model = whisperx.load_model("large-v3", transcribe_device, compute_type=transcribe_compute_type)
-
     align_models={}
     def load_align_model(language: str):
         if language not in align_models:
             logging.info(f"Loading model for language {language}") # before alignment
             try:
                 model_a, metadata = whisperx.load_align_model(language_code=language, device=align_device)
-            except:
+            except Exception as e:
+                logging.error(f"Failed to load alignment model for {language}: {e}")
                 return None, None
             align_models[language] = (model_a, metadata)
             logging.info(f"  loaded model for language {language}") # before alignment
@@ -109,8 +146,7 @@ def run_one(inputname: str, temp_files: List[str], args: argparse.Namespace) -> 
     result = whisperx.align(result["segments"], model_a, metadata, audio, align_device, return_char_alignments=False)
     logging.debug(result["segments"]) # after alignment
     logging.info("Diarizing") # before alignment
-    diarize_model = whisperx.DiarizationPipeline(use_auth_token="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", device=diarize_device)
-    #diarize_model = whisperx.DiarizationPipeline(use_auth_token="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", device=diarize_device)
+    diarize_model = whisperx.DiarizationPipeline(use_auth_token="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", device=diarize_device)
     diarize_segments = diarize_model(audio)
 
     logging.info(f"Assigning speakers")
@@ -150,7 +186,7 @@ def run_one(inputname: str, temp_files: List[str], args: argparse.Namespace) -> 
     if res_table:
         df = pd.DataFrame(res_table, columns=["starttime", 'endtime', 'speaker', 'text'])
         if args.translate_to_language:
-            translateopenai.translate_dataframe(args.translate_api_key_file , df, speaker_col="speaker", text_col="text", output_col="translated", language=args.translate_to_language, context_lines=args.translate_context, model=args.translate_model)        
+            translateopenai.translate_dataframe(args.translate_api_key_file , df, speaker_col="speaker", text_col="text", output_col="translated", language=args.translate_to_language, context_lines=args.translate_context, model=args.translate_model)
         df.to_excel(f"{output_prefix}.xlsx", index=False)
 
 def mp_run(parallel: bool, fname: str, args: argparse.Namespace, temp_files: List[str] = []):
@@ -169,25 +205,62 @@ def mp_run(parallel: bool, fname: str, args: argparse.Namespace, temp_files: Lis
     else:
         run_one(fname, temp_files, args)
         return (fname, True)
- 
+
+def get_available_models(api_key_file):
+    """Get available OpenAI models with fallback to common models."""
+    try:
+        from openai import OpenAI
+        import translateopenai
+        client = OpenAI(api_key=translateopenai.read_openai_key(api_key_file))
+        models = [m for m in [x.id for x in client.models.list().data] if 'gpt' in m]
+        if models:
+            return models
+    except Exception as e:
+        logging.warning(f"Could not fetch models from OpenAI API: {str(e)}")
+    
+    # Fallback to common models
+    return ["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo-preview"]
 
 def main() -> int:
-    parser = argparse.ArgumentParser()
+    # First parse just the API key file and log level to initialize logging
+    pre_parser = argparse.ArgumentParser(add_help=False)
+    pre_parser.add_argument("--log_level", default=logging.INFO, type=lambda x: getattr(logging, x))
+    pre_parser.add_argument('--translate_api_key_file', default="../aikeys/openai.key")
+    temp_args, _ = pre_parser.parse_known_args()
+    
+    # Setup basic logging for model retrieval
+    logging.basicConfig(level=temp_args.log_level, format='%(asctime)s:%(lineno)d %(message)s')
+    
+    # Get available models
+    api_key_file = getattr(temp_args, 'translate_api_key_file', "../aikeys/openai.key")
+    models = get_available_models(api_key_file)
+    models_str = ", ".join(models)
+    
+    # Create main parser with model information in the epilog
+    parser = argparse.ArgumentParser(description="Extract and transcribe audio from videos",
+                                    formatter_class=argparse.RawDescriptionHelpFormatter)
 
-    parser.add_argument("--log_level", default=logging.INFO, type=lambda x: getattr(logging, x), help=f"Configure the logging level: {list(logging._nameToLevel.keys())}")
+    # Add all arguments
+    parser.add_argument("--log_level", default=logging.INFO, type=lambda x: getattr(logging, x), 
+                       help=f"Configure the logging level: {list(logging._nameToLevel.keys())}")
     parser.add_argument('--force', help="force overwrite", action="store_true")
     parser.add_argument('--input', help=f"what file to use")
     parser.add_argument('--device', choices=["cpu", "cuda", "mps"], default="cpu", help=f"what device to use")
     parser.add_argument('--outdir', default='.', help=f"where to write the output files")
     parser.add_argument('--language', default='AUTO', help="What language to use")
     parser.add_argument('--parallel', type=int, default=4, help="How many threads to run in parallel")
+    parser.add_argument('--translate_api_key_file', default="../aikeys/openai.key", help="OPENAI_API_KEY file")
     parser.add_argument('--translate_to_language', help="If set, translate to this language by adding a column to the output file")
-    parser.add_argument('--translate_context', type=int,default=40,help="How many lines to process")
-    parser.add_argument('--translate_model', default="gpt-3.5-turbo",help="What openai model to use - [gpt-3.5-turbo, gpt-4]")
-    parser.add_argument('--translate_api_key_file', default="../aikeys/openai.key",help="OPENAI_API_KEY file")
+    parser.add_argument('--translate_context', type=int, default=40, help="How many lines to process")
+    parser.add_argument('--translate_model', default="gpt-3.5-turbo", choices=models,
+                       help=f"What OpenAI model to use for translation")
     parser.add_argument('files', nargs=argparse.ONE_OR_MORE, help="files to process")
+    
     args = parser.parse_args()
+    
+    # Reset logging with final log level
     logging.basicConfig(level=args.log_level, format='%(asctime)s:%(lineno)d %(message)s')
+    
     logger=logging.getLogger(__name__)
     logger.info(f"Args: {args}")
     if args.parallel>1:

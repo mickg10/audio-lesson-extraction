@@ -1,4 +1,6 @@
 git+https://github.com/m-bain/whisperx.git
-pytube
+pytubefix
 openpyxl
 openai
+nvidia-pyindex
+nvidia-cudnn
