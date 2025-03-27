@@ -30,6 +30,24 @@ import multiprocessing
 from typing import List
 import translateopenai
 
+def detect_device() -> str:
+    """Detect the best available device for PyTorch computations.
+    
+    Returns:
+        str: 'cuda' if CUDA is available, 'mps' if Metal Performance Shaders is available, 'cpu' otherwise
+    """
+    if torch.cuda.is_available():
+        logging.info("CUDA device detected - using GPU acceleration")
+        return "cuda"
+    
+    # Check for MPS (Apple Silicon GPU support)
+    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        logging.info("MPS device detected - using Apple Silicon GPU acceleration")
+        return "mps"
+    
+    logging.info("No GPU acceleration available - using CPU")
+    return "cpu"
+
 def download_init(url):
     logging.info(f"Initializing youtube : {url}")
     try:
@@ -186,7 +204,16 @@ def run_one(inputname: str, temp_files: List[str], args: argparse.Namespace) -> 
     if res_table:
         df = pd.DataFrame(res_table, columns=["starttime", 'endtime', 'speaker', 'text'])
         if args.translate_to_language:
-            translateopenai.translate_dataframe(args.translate_api_key_file , df, speaker_col="speaker", text_col="text", output_col="translated", language=args.translate_to_language, context_lines=args.translate_context, model=args.translate_model)
+            translateopenai.translate_dataframe(
+                api_key_file=args.translate_api_key_file,
+                df=df,
+                speaker_col="speaker",
+                text_col="text",
+                output_col="translated",
+                language=args.translate_to_language,
+                context_lines=args.translate_context,
+                model=args.translate_model
+            )
         df.to_excel(f"{output_prefix}.xlsx", index=False)
 
 def mp_run(parallel: bool, fname: str, args: argparse.Namespace, temp_files: List[str] = []):
@@ -238,14 +265,15 @@ def main() -> int:
     
     # Create main parser with model information in the epilog
     parser = argparse.ArgumentParser(description="Extract and transcribe audio from videos",
-                                    formatter_class=argparse.RawDescriptionHelpFormatter)
+                                    formatter_class=argparse.RawDescriptionHelpFormatter,
+                                    epilog=f"Available models: {models_str}")
 
     # Add all arguments
     parser.add_argument("--log_level", default=logging.INFO, type=lambda x: getattr(logging, x), 
                        help=f"Configure the logging level: {list(logging._nameToLevel.keys())}")
     parser.add_argument('--force', help="force overwrite", action="store_true")
     parser.add_argument('--input', help=f"what file to use")
-    parser.add_argument('--device', choices=["cpu", "cuda", "mps"], default="cpu", help=f"what device to use")
+    parser.add_argument('--device', choices=["cpu", "cuda", "mps", "auto"], default="auto", help=f"what device to use")
     parser.add_argument('--outdir', default='.', help=f"where to write the output files")
     parser.add_argument('--language', default='AUTO', help="What language to use")
     parser.add_argument('--parallel', type=int, default=4, help="How many threads to run in parallel")
@@ -260,6 +288,9 @@ def main() -> int:
     
     # Reset logging with final log level
     logging.basicConfig(level=args.log_level, format='%(asctime)s:%(lineno)d %(message)s')
+    
+    if args.device == "auto":
+        args.device = detect_device()
     
     logger=logging.getLogger(__name__)
     logger.info(f"Args: {args}")
@@ -278,4 +309,3 @@ def main() -> int:
 
 if __name__ == '__main__':
     sys.exit(main())
-
